@@ -1,0 +1,5 @@
+node_modules/
+.env
+backend/uploads/cv/*
+!backend/uploads/cv/.gitkeep
+dist/
