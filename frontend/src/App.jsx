@@ -21,6 +21,13 @@ import CandidateCV from './pages/candidate/CandidateCV.jsx';
 import CandidateApplications from './pages/candidate/CandidateApplications.jsx';
 import CandidateApplicationDetail from './pages/candidate/CandidateApplicationDetail.jsx';
 
+import HRMonitorDashboard from './pages/hr/HRMonitorDashboard.jsx';
+import HRMonitorJobs from './pages/hr/HRMonitorJobs.jsx';
+import HRMonitorJobForm from './pages/hr/HRMonitorJobForm.jsx';
+import HRMonitorApplicants from './pages/hr/HRMonitorApplicants.jsx';
+import HRMonitorApplicantDetail from './pages/hr/HRMonitorApplicantDetail.jsx';
+import HRMonitorCompany from './pages/hr/HRMonitorCompany.jsx';
+
 import AdminDashboard from './pages/admin/AdminDashboard.jsx';
 import AdminJobs from './pages/admin/AdminJobs.jsx';
 import AdminJobForm from './pages/admin/AdminJobForm.jsx';
@@ -50,7 +57,7 @@ export default function App() {
         <Route path="*" element={<NotFound />} />
       </Route>
 
-      {/* Dashboard kandidat */}
+      {/* Dashboard kandidat (pelamar) */}
       <Route element={<ProtectedRoute role="candidate" />}>
         <Route element={<DashboardLayout role="candidate" />}>
           <Route path="/candidate/dashboard" element={<CandidateDashboard />} />
@@ -62,7 +69,21 @@ export default function App() {
         </Route>
       </Route>
 
-      {/* Dashboard HR / admin */}
+      {/* Dashboard HRD (perusahaan) */}
+      <Route element={<ProtectedRoute role="hr" />}>
+        <Route element={<DashboardLayout role="hr" />}>
+          <Route path="/hr/dashboard" element={<HRMonitorDashboard />} />
+          <Route path="/hr/jobs" element={<HRMonitorJobs />} />
+          <Route path="/hr/jobs/new" element={<HRMonitorJobForm />} />
+          <Route path="/hr/jobs/:id/edit" element={<HRMonitorJobForm />} />
+          <Route path="/hr/applicants" element={<HRMonitorApplicants />} />
+          <Route path="/hr/applicants/:id" element={<HRMonitorApplicantDetail />} />
+          <Route path="/hr/company" element={<HRMonitorCompany />} />
+          <Route path="/hr/settings" element={<Settings />} />
+        </Route>
+      </Route>
+
+      {/* Dashboard admin platform (semua perusahaan) */}
       <Route element={<ProtectedRoute role="admin" />}>
         <Route element={<DashboardLayout role="admin" />}>
           <Route path="/admin/dashboard" element={<AdminDashboard />} />

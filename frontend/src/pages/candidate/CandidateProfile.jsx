@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Save } from 'lucide-react';
+import { Save, FileText } from 'lucide-react';
 import { Loading, ErrorMessage } from '../../components/States.jsx';
 import { useFetch } from '../../hooks/useFetch.js';
 import { useAuth } from '../../hooks/useAuth.jsx';
@@ -30,7 +30,6 @@ function ProfileForm({ initial }) {
     try {
       const res = await api(`/candidates/${user.id}`, { method: 'PUT', body: form });
       const saved = res.data.candidate;
-      // Nama di sidebar ikut diperbarui
       setUser({ ...user, full_name: saved.full_name, email: saved.email, phone: saved.phone });
       setMessage('Profil berhasil disimpan');
     } catch (err) {
@@ -71,7 +70,7 @@ function ProfileForm({ initial }) {
         </label>
       </div>
       <label className="field">
-        <span>Skills</span>
+        <span>Skills (tulis koma)</span>
         <textarea name="skills" rows={3} value={form.skills} onChange={handleChange} maxLength={1000} placeholder="Pisahkan dengan koma. Contoh: React, Node.js, SQL" />
       </label>
 
@@ -92,7 +91,10 @@ export default function CandidateProfile() {
 
   return (
     <>
-      <div className="page-head"><h1>Profil</h1></div>
+      <div className="page-head">
+        <h1>Profil</h1>
+        <p className="muted small">Isi data diri Anda. Skill yang terdeteksi dari CV akan ditampilkan di bawah.</p>
+      </div>
       {loading && <Loading />}
       {error && <ErrorMessage message={error} onRetry={reload} />}
       {data && <ProfileForm initial={data.candidate} />}

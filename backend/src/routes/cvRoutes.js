@@ -16,4 +16,7 @@ router.delete('/:id', authenticate, authorize('candidate'), [idRule, validate], 
 // Kandidat (CV sendiri) dan HR (CV pelamar) boleh mengunduh
 router.get('/:id/download', authenticate, [idRule, validate], downloadCv);
 
+// Data ekstraksi dari CV aktif kandidat (skill, ijazah, sertifikat)
+router.get('/extract', authenticate, authorize('candidate'), getExtract);
+
 export default router;

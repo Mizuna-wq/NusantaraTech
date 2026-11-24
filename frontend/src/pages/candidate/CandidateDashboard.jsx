@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Clock, FileText, MessageSquare, Search } from 'lucide-react';
+import { Briefcase, CheckCircle2, Clock, FileText, Gauge, Search, TrendingUp } from 'lucide-react';
 import StatCard from '../../components/StatCard.jsx';
 import ApplicationRow from '../../components/ApplicationRow.jsx';
 import { Loading, EmptyState, ErrorMessage } from '../../components/States.jsx';
@@ -25,29 +25,66 @@ export default function CandidateDashboard() {
       {data && (
         <>
           <div className="stat-grid">
-            <StatCard icon={FileText} tone="primary" value={data.stats.total} label="Jumlah lamaran" />
-            <StatCard icon={Clock} tone="amber" value={data.stats.in_process} label="Lamaran dalam proses" />
-            <StatCard icon={MessageSquare} tone="violet" value={data.stats.interview} label="Interview" />
-            <StatCard icon={CheckCircle2} tone="green" value={data.stats.accepted} label="Diterima" />
+            <StatCard icon={Briefcase} tone="primary" value={data.stats.total} label="Jumlah lamaran" />
+            <StatCard icon={Clock} tone="amber" value={data.stats.pending} label="Lamaran dalam proses" />
+            <StatCard icon={CheckCircle2} tone="green" value={data.stats.interview} label="Interview" />
+            <StatCard icon={Gauge} tone="violet" value={data.recommendations.length} label="Rekomendasi" />
           </div>
 
-          <section className="dash-section">
-            <div className="section-head">
-              <h2>Lamaran terbaru</h2>
-              {data.latest.length > 0 && (
-                <Link to="/candidate/applications" className="text-link">Lihat semua</Link>
-              )}
-            </div>
-            {data.latest.length === 0 ? (
-              <EmptyState title="Anda belum melamar posisi apa pun" text="Lamaran yang Anda kirim akan muncul di sini.">
-                <Link to="/karir" className="btn btn-outline btn-sm">Lihat lowongan</Link>
-              </EmptyState>
-            ) : (
-              <div className="row-list">
-                {data.latest.map((item) => <ApplicationRow key={item.id} application={item} />)}
+          {/* Rekomendasi lowongan berdasarkan skill */}
+          {data.recommendations.length > 0 && (
+            <section className="dash-section">
+              <div className="section-head">
+                <h2>Rekomendasi lowongan</h2>
+                <span className="muted small">Dijalankan otomatis dari skill yang Anda masukkan dan skill yang terdeteksi dari CV Anda</span>
               </div>
-            )}
-          </section>
+              <div className="row-list">
+                {data.recommendations.map((job) => (
+                  <Link key={job.id} to={`/karir/${job.id}`} className="card card-recommend">
+                    <div className="card-avatar">
+                      <Briefcase size={18} />
+                    </div>
+                    <div className="card-body">
+                      <div className="card-title">{job.title}</div>
+                      <div className="muted small">{job.department} · {job.location}</div>
+                      <div className="card-tags">
+                        <span className="tag">Rp {job.salary_min.toLocaleString()} – Rp {job.salary_max.toLocaleString()}</span>
+                        <span className="tag tag-light">{job.relevance_label}</span>
+                      </div>
+                    </div>
+                    <div className="card-arrow"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Lowongan publik */}
+          {data.jobs.length > 0 && (
+            <section className="dash-section">
+              <div className="section-head">
+                <h2>Lowongan yang tersedia</h2>
+                <Link to="/karir" className="text-link">Lihat semua</Link>
+              </div>
+              <div className="row-list">
+                {data.jobs.map((job) => (
+                  <Link key={job.id} to={`/karir/${job.id}`} className="card card-recommend">
+                    <div className="card-avatar">
+                      <Briefcase size={18} />
+                    </div>
+                    <div className="card-body">
+                      <div className="card-title">{job.title}</div>
+                      <div className="muted small">{job.department} · {job.location}</div>
+                      <div className="card-tags">
+                        <span className="tag">Rp {job.salary_min.toLocaleString()} – Rp {job.salary_max.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <div className="card-arrow"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
         </>
       )}
     </>

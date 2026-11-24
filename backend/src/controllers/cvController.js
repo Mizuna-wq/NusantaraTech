@@ -1,9 +1,11 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { pool, withTransaction } from '../config/db.js';
+import { pool } from '../config/db.js';
 import { BACKEND_ROOT } from '../config/paths.js';
 import { AppError } from '../utils/AppError.js';
 import { success } from '../utils/response.js';
+import { extractPdfText } from './cvService.js';
+import { extractSkills, extractIjazah, extractSertifikat } from './recommendationService.js';
 
 // Kolom yang aman dikirim ke frontend (tanpa lokasi file di server)
 const PUBLIC_COLUMNS = 'c.id, c.original_filename, c.mime_type, c.file_size, c.uploaded_at';
@@ -12,10 +14,6 @@ async function getProfileId(userId) {
   const [rows] = await pool.query('SELECT id FROM candidate_profiles WHERE user_id = ?', [userId]);
   if (rows.length === 0) throw new AppError('Profil kandidat tidak ditemukan', 404);
   return rows[0].id;
-}
-
-function removeFile(filePath) {
-  return fs.unlink(path.join(BACKEND_ROOT, filePath)).catch(() => {});
 }
 
 // Hapus CV lama yang sudah tidak aktif dan tidak dipakai oleh lamaran mana pun.
@@ -29,18 +27,28 @@ async function removeUnusedCvs(profileId) {
   );
   for (const row of rows) {
     await pool.query('DELETE FROM cv_files WHERE id = ?', [row.id]);
-    await removeFile(row.file_path);
+    await fs.unlink(path.join(BACKEND_ROOT, row.file_path)).catch(() => {});
   }
 }
 
 // Nama asli file dibersihkan dari karakter berbahaya sebelum disimpan ke database
 function cleanOriginalName(name) {
-  // multer membaca nama file sebagai latin1; ubah kembali ke UTF-8
   const decoded = Buffer.from(name, 'latin1').toString('utf8');
   return path
     .basename(decoded)
-    .replace(/[^\p{L}\p{N}.\-_() ]/gu, '_')
+    .replace(/[^\p{L}\p{N}.\\-_() ]/gu, '_')
     .slice(0, 150);
+}
+
+// Ekstraksi data dari file PDF CV, lalu simpan ke profil kandidat.
+async function saveExtractedFromCv(profileId, extracted) {
+  if (!extracted) return;
+  await pool.query(
+    `UPDATE candidate_profiles
+     SET extracted_skills = ?, ijazah = ?, sertifikat = ?
+     WHERE id = ?`,
+    [JSON.stringify(extracted.skills || []), extracted.ijazah || null, extracted.sertifikat || null, profileId]
+  );
 }
 
 export async function getMyCv(req, res) {
@@ -60,23 +68,36 @@ export async function uploadCv(req, res) {
   try {
     const profileId = await getProfileId(req.user.id);
 
-    const cvId = await withTransaction(async (conn) => {
-      await conn.query('UPDATE cv_files SET is_current = 0 WHERE candidate_profile_id = ?', [profileId]);
-      const [result] = await conn.query(
-        `INSERT INTO cv_files (candidate_profile_id, original_filename, stored_filename,
-           file_path, mime_type, file_size, is_current)
-         VALUES (?, ?, ?, ?, ?, ?, 1)`,
-        [
+    const cvId = await pool.query(
+      `INSERT INTO cv_files (candidate_profile_id, original_filename, stored_filename,
+         file_path, mime_type, file_size, is_current)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [
+        profileId,
+        cleanOriginalName(req.file.originalname),
+        req.file.filename,
+        `uploads/cv/${req.file.filename}`,
+        req.file.mimetype,
+        req.file.size,
+      ]
+    );
+
+    if (req.file.buffer && req.file.mimetype === 'application/pdf') {
+      try {
+        const extractedText = extractPdfText(req.file.buffer);
+        const cleanText = extractedText.replace(/\s+/g, ' ').trim().toLowerCase();
+        await saveExtractedFromCv(
           profileId,
-          cleanOriginalName(req.file.originalname),
-          req.file.filename,
-          `uploads/cv/${req.file.filename}`,
-          req.file.mimetype,
-          req.file.size,
-        ]
-      );
-      return result.insertId;
-    });
+          {
+            skills: extractSkills(cleanText),
+            ijazah: extractIjazah(cleanText),
+            sertifikat: extractSertifikat(cleanText),
+          }
+        );
+      } catch (parseErr) {
+        console.error('Gagal membaca isi PDF:', parseErr.message);
+      }
+    }
 
     await removeUnusedCvs(profileId);
 
@@ -105,7 +126,7 @@ export async function deleteCv(req, res) {
     await pool.query('UPDATE cv_files SET is_current = 0 WHERE id = ?', [cv.id]);
   } else {
     await pool.query('DELETE FROM cv_files WHERE id = ?', [cv.id]);
-    await removeFile(cv.file_path);
+    await fs.unlink(path.join(BACKEND_ROOT, cv.file_path)).catch(() => {});
   }
   success(res, 'CV berhasil dihapus');
 }
@@ -117,7 +138,10 @@ export async function downloadCv(req, res, next) {
 
   if (req.user.role === 'admin') {
     sql = `SELECT c.* FROM cv_files c
-           WHERE c.id = ? AND EXISTS(SELECT 1 FROM applications a WHERE a.cv_file_id = c.id)`;
+           WHERE c.id = ? AND EXISTS(SELECT 1 FROM applications a WHERE a.cv_file_id = c.id)
+             AND EXISTS (SELECT 1 FROM applications a2 JOIN jobs j ON j.id = a2.job_id
+                         WHERE a2.cv_file_id = c.id AND j.company_id = ?)`;
+    params.push(req.user.company_id);
   } else {
     sql = `SELECT c.* FROM cv_files c JOIN candidate_profiles p ON p.id = c.candidate_profile_id
            WHERE c.id = ? AND p.user_id = ?`;
@@ -130,5 +154,34 @@ export async function downloadCv(req, res, next) {
 
   res.download(path.join(BACKEND_ROOT, cv.file_path), cv.original_filename, (err) => {
     if (err && !res.headersSent) next(new AppError('File CV tidak ditemukan di server', 404));
+  });
+}
+
+// Data ekstraksi dari CV aktif kandidat (skill, ijazah, sertifikat)
+export async function getExtract(req, res) {
+  const [rows] = await pool.query(
+    `SELECT c.id, c.original_filename, c.mime_type, c.file_size, c.uploaded_at,
+       p.extracted_skills, p.ijazah, p.sertifikat
+     FROM cv_files c
+     JOIN candidate_profiles p ON p.id = c.candidate_profile_id
+     WHERE p.user_id = ? AND c.is_current = 1
+     ORDER BY c.id DESC LIMIT 1`,
+    [req.user.id]
+  );
+  const cv = rows[0];
+  if (!cv) throw new AppError('CV tidak ditemukan', 404);
+
+  const extracted = cv.extracted_skills ? JSON.parse(cv.extracted_skills || '[]') : [];
+  success(res, 'Data ekstraksi CV', {
+    cv: {
+      id: cv.id,
+      original_filename: cv.original_filename,
+      mime_type: cv.mime_type,
+      file_size: cv.file_size,
+      uploaded_at: cv.uploaded_at,
+    },
+    skills: extracted.skills || [],
+    ijazah: extracted.ijazah || null,
+    sertifikat: extracted.sertifikat || null,
   });
 }

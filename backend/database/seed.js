@@ -1,18 +1,39 @@
-// Membuat akun HR pertama dan beberapa lowongan contoh.
+// Membuat akun HR untuk setiap perusahaan dan beberapa lowongan contoh.
 // Jalankan dari folder backend: npm run seed
 import bcrypt from 'bcrypt';
 import { pool } from '../src/config/db.js';
 
-const adminEmail = process.env.ADMIN_EMAIL || 'hr@nusantaratech.id';
+const adminEmail = process.env.ADMIN_EMAIL || 'admin@nusantaratech.id';
 const adminPassword = process.env.ADMIN_PASSWORD || 'Admin12345';
 
-function daysFromNow(days) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
-}
+// Contoh perusahaan (pihak ketiga) yang terdaftar di platform.
+const companies = [
+  {
+    name: 'NusantaraTech',
+    slug: 'nusantaratech',
+    email: 'hr@nusantaratech.id',
+    phone: '081200000001',
+    address: 'Jl. Raya Darmo No. 88, Surabaya, Jawa Timur 60265',
+    description: 'Perusahaan teknologi yang membuka lowongan Frontend, Backend, Data Analyst, dan HR.',
+  },
+  {
+    name: 'TechCorp Indonesia',
+    slug: 'techcorp',
+    email: 'hr@techcorp.id',
+    phone: '081200000002',
+    address: 'Glove Tower, Jakarta Utara, DKI Jakarta',
+    description: 'Perusahaan teknologi yang membuka lowongan Backend, Data Analyst, dan HR.',
+  },
+  {
+    name: 'Kreatif Desain',
+    slug: 'kreatifdesain',
+    email: 'hr@kreatifdesain.id',
+    phone: '081200000003',
+    address: 'Jl. Seni Rupa No. 12, Bandung, Jawa Barat',
+    description: 'Perusahaan desain yang membuka lowongan UI/UX Designer dan Frontend.',
+  },
+];
 
-// Satu baris pada responsibilities, qualifications, dan benefits = satu poin
 const jobs = [
   {
     title: 'Frontend Developer',
@@ -21,7 +42,7 @@ const jobs = [
     employment_type: 'full_time',
     salary_min: 9000000,
     salary_max: 14000000,
-    deadline: daysFromNow(45),
+    deadline: 45,
     description:
       'Anda akan bergabung dengan tim produk untuk membangun antarmuka aplikasi web yang dipakai pelanggan bisnis kami setiap hari.',
     responsibilities:
@@ -37,7 +58,7 @@ const jobs = [
     employment_type: 'full_time',
     salary_min: 10000000,
     salary_max: 16000000,
-    deadline: daysFromNow(40),
+    deadline: 40,
     description:
       'Anda akan mengembangkan layanan backend dan API yang menjadi dasar seluruh produk NusantaraTech.',
     responsibilities:
@@ -48,12 +69,12 @@ const jobs = [
   },
   {
     title: 'UI/UX Designer',
-    department: 'Product',
+    department: 'Design',
     location: 'Bandung',
     employment_type: 'full_time',
     salary_min: 8000000,
     salary_max: 12000000,
-    deadline: daysFromNow(30),
+    deadline: 30,
     description:
       'Anda akan merancang pengalaman pengguna untuk produk web kami, dari riset sederhana sampai desain akhir yang siap dikembangkan.',
     responsibilities:
@@ -69,7 +90,7 @@ const jobs = [
     employment_type: 'internship',
     salary_min: 2500000,
     salary_max: 3000000,
-    deadline: daysFromNow(35),
+    deadline: 35,
     description:
       'Program magang selama 6 bulan untuk mahasiswa tingkat akhir yang ingin belajar membangun aplikasi web bersama tim engineering.',
     responsibilities:
@@ -85,7 +106,7 @@ const jobs = [
     employment_type: 'internship',
     salary_min: 2500000,
     salary_max: 3000000,
-    deadline: daysFromNow(35),
+    deadline: 35,
     description:
       'Magang selama 6 bulan di tim data untuk membantu menyiapkan laporan dan analisis yang dipakai tim produk dan bisnis.',
     responsibilities:
@@ -101,7 +122,7 @@ const jobs = [
     employment_type: 'contract',
     salary_min: 6500000,
     salary_max: 9000000,
-    deadline: daysFromNow(25),
+    deadline: 25,
     description:
       'Kontrak 12 bulan untuk membantu proses rekrutmen, administrasi karyawan, dan kegiatan pengembangan tim.',
     responsibilities:
@@ -112,43 +133,81 @@ const jobs = [
   },
 ];
 
-async function seed() {
-  const [admins] = await pool.query('SELECT id FROM users WHERE email = ?', [adminEmail]);
-  let adminId;
-
-  if (admins.length > 0) {
-    adminId = admins[0].id;
-    console.log(`Akun HR sudah ada: ${adminEmail}`);
-  } else {
-    const hash = await bcrypt.hash(adminPassword, 10);
-    const [result] = await pool.query(
-      `INSERT INTO users (full_name, email, phone, password_hash, role)
-       VALUES ('Tim HR NusantaraTech', ?, '081200000000', ?, 'admin')`,
-      [adminEmail, hash]
-    );
-    adminId = result.insertId;
-    console.log(`Akun HR dibuat: ${adminEmail} / ${adminPassword}`);
+async function createCompanies() {
+  const [rows] = await pool.query('SELECT id, slug FROM companies');
+  if (rows.length === companies.length) {
+    console.log('Perusahaan sudah ada, melewati pembuatan.');
+    return rows;
   }
+  const result = [];
+  for (const c of companies) {
+    const [res] = await pool.query(
+      'INSERT INTO companies (name, slug, email, phone, address, description) VALUES (?, ?, ?, ?, ?, ?)',
+      [c.name, c.slug, c.email, c.phone, c.address, c.description]
+    );
+    result.push({ id: res.insertId, ...c });
+  }
+  return result;
+}
 
-  const [[{ total }]] = await pool.query('SELECT COUNT(*) AS total FROM jobs');
-  if (total > 0) {
-    console.log('Tabel jobs sudah berisi data, lowongan contoh dilewati');
+async function ensureAdminUser() {
+  const [rows] = await pool.query('SELECT id FROM users WHERE email = ?', [adminEmail]);
+  if (rows.length > 0) return rows[0].id;
+  const hash = await bcrypt.hash(adminPassword, 10);
+  const [res] = await pool.query(
+    'INSERT INTO users (full_name, email, phone, password_hash, role, company_id) VALUES (?, ?, ?, ?, "admin", NULL)',
+    ['Tim Pengelola Platform', adminEmail, '081200000099', hash]
+  );
+  return res.insertId;
+}
+
+async function ensureHrUser(companyId, companyName) {
+  const email = `hr@${companies[companyId - 1].slug}.id`;
+  const [rows] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+  if (rows.length > 0) return rows[0].id;
+  const hash = await bcrypt.hash('Admin12345', 10);
+  const [res] = await pool.query(
+    'INSERT INTO users (full_name, email, phone, password_hash, role, company_id) VALUES (?, ?, ?, ?, "hr", ?)',
+    [`HR ${companyName}`, email, '081200000000', hash, companyId]
+  );
+  return res.insertId;
+}
+
+async function seedJobs(companies, adminId) {
+  const [total] = await pool.query('SELECT COUNT(*) AS total FROM jobs');
+  if (total[0].total > 0) {
+    console.log('Tabel jobs sudah berisi data, lowongan contoh dilewati.');
     return;
   }
 
-  for (const job of jobs) {
-    await pool.query(
-      `INSERT INTO jobs (title, department, description, responsibilities, qualifications, benefits,
-         location, employment_type, salary_min, salary_max, deadline, status, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`,
-      [
-        job.title, job.department, job.description, job.responsibilities, job.qualifications,
-        job.benefits, job.location, job.employment_type, job.salary_min, job.salary_max,
-        job.deadline, adminId,
-      ]
-    );
+  // Buat pekerjaan untuk setiap perusahaan, dipegang oleh HR perusahaan masing-masing.
+  for (const company of companies) {
+    const hrId = await ensureHrUser(company.id, company.name);
+    const deadline = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    for (let i = 0; i < jobs.length; i += 1) {
+      const j = jobs[i];
+      await pool.query(
+        `INSERT INTO jobs
+          (title, department, location, employment_type, salary_min, salary_max, deadline, status, created_by, description, responsibilities, qualifications, benefits, company_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'published', ?, ?, ?, ?, ?, ?)`,
+        [
+          j.title, j.department, j.location, j.employment_type, j.salary_min, j.salary_max,
+          deadline, hrId, j.description, j.responsibilities, j.qualifications, j.benefits,
+          company.id,
+        ]
+      );
+    }
+    console.log(`${jobs.length} lowongan ${company.name} dibuat.`);
   }
-  console.log(`${jobs.length} lowongan contoh dibuat`);
+  console.log(`${jobs.length * companies.length} lowongan contoh dibuat.`);
+}
+
+async function seed() {
+  const companies = await createCompanies();
+  const adminId = await ensureAdminUser();
+  console.log('Aplikasi admin (platform-wide):', adminEmail, '/', adminPassword);
+  await seedJobs(companies, adminId);
+  console.log('Selesai seeding.');
 }
 
 seed()

@@ -14,6 +14,13 @@ const MENUS = {
     { to: '/candidate/applications', label: 'Lamaran Saya', icon: Briefcase },
     { to: '/candidate/settings', label: 'Pengaturan', icon: Settings },
   ],
+  hr: [
+    { to: '/hr/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/hr/jobs', label: 'Lowongan', icon: Briefcase },
+    { to: '/hr/applicants', label: 'Pelamar', icon: Users },
+    { to: '/hr/company', label: 'Perusahaan', icon: Building2 },
+    { to: '/hr/settings', label: 'Pengaturan', icon: Settings },
+  ],
   admin: [
     { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { to: '/admin/jobs', label: 'Lowongan', icon: Briefcase },
@@ -34,7 +41,7 @@ export default function DashboardLayout({ role }) {
 
   const items = [
     ...MENUS[role],
-    { label: role === 'admin' ? 'Logout' : 'Keluar', icon: LogOut, onClick: handleLogout, divider: true },
+    { label: 'Keluar', icon: LogOut, onClick: handleLogout, divider: true },
   ];
 
   return <AppShell items={items} renderFooter={() => <SidebarUser user={user} />} padded />;

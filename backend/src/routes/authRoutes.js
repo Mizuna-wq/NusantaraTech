@@ -21,6 +21,8 @@ router.post(
     body('phone').customSanitizer(cleanPhone).matches(PHONE_REGEX).withMessage(PHONE_MESSAGE),
     body('password').matches(PASSWORD_REGEX).withMessage(PASSWORD_MESSAGE),
     body('confirm_password').custom((value, { req }) => value === req.body.password).withMessage('Konfirmasi password tidak sama'),
+    body('role').optional().isIn(['candidate', 'hr', 'admin']).withMessage('Role tidak valid'),
+    body('company_id').optional().isInt({ min: 1 }).withMessage('Perusahaan tidak valid'),
     validate,
   ],
   register

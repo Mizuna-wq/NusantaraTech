@@ -1,5 +1,5 @@
 import { Clock, Mail, MapPin, Phone } from 'lucide-react';
-import { COMPANY } from '../../utils/constants.js';
+import { DEFAULT_COMPANY } from '../../utils/constants.js';
 
 export default function Contact() {
   return (

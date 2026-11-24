@@ -119,3 +119,33 @@ CREATE TABLE application_status_history (
   CONSTRAINT fk_history_application FOREIGN KEY (application_id) REFERENCES applications (id) ON DELETE CASCADE,
   CONSTRAINT fk_history_changed_by FOREIGN KEY (changed_by) REFERENCES users (id)
 ) ENGINE=InnoDB;
+
+-- Daftar perusahaan/tenant (satu perusahaan = satu "pihak ketiga" yang memakai platform).
+-- Kandidat (role 'candidate') tidak dipegang di sebuah perusahaan; mereka melamar lowongan
+-- dari berbagai perusahaan. HRD (role 'hr') dan admin platform ('admin') selalu milik
+-- tepat satu perusahaan, sehingga admin perusahaan A tidak bisa melihat data perusahaan B.
+CREATE TABLE companies (
+  id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name        VARCHAR(150) NOT NULL,
+  slug        VARCHAR(150) NOT NULL,
+  email       VARCHAR(255) NOT NULL,
+  phone       VARCHAR(20)  NOT NULL,
+  address     TEXT NULL,
+  description TEXT NULL,
+  created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_companies_slug (slug)
+) ENGINE=InnoDB;
+
+-- HRD ('hr') dan admin ('admin') dipegang oleh sebuah perusahaan.
+ALTER TABLE users ADD COLUMN company_id INT UNSIGNED NULL AFTER role;
+ALTER TABLE users ADD CONSTRAINT fk_users_company FOREIGN KEY (company_id) REFERENCES companies (id) ON DELETE SET NULL;
+
+-- Lowongan menjadi milik satu perusahaan.
+ALTER TABLE jobs ADD COLUMN company_id INT UNSIGNED NOT NULL AFTER employment_type;
+ALTER TABLE jobs ADD CONSTRAINT fk_jobs_company FOREIGN KEY (company_id) REFERENCES companies (id) ON DELETE CASCADE;
+
+-- Data yang diekstrak dari CV (skill, ijazah, sertifikat) tersimpan di profil kandidat.
+ALTER TABLE candidate_profiles ADD COLUMN extracted_skills TEXT NULL COMMENT 'JSON daftar skill yang ditemukan dari CV';
+ALTER TABLE candidate_profiles ADD COLUMN ijazah TEXT NULL;
+ALTER TABLE candidate_profiles ADD COLUMN sertifikat TEXT NULL;

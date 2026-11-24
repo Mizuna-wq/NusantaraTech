@@ -3,16 +3,19 @@ import { AppError } from '../utils/AppError.js';
 import { success } from '../utils/response.js';
 import { escapeLike } from '../utils/html.js';
 import { parsePagination, buildPagination } from '../utils/pagination.js';
-import { COMPANY_NAME, EMPLOYMENT_TYPES, JOB_STATUSES } from '../utils/constants.js';
+import { getCompanyWhere } from '../middleware/auth.js';
+import { COMPANY } from '../utils/constants.js';
 
 // Kolom yang ditampilkan pada daftar lowongan
 const LIST_COLUMNS = `j.id, j.title, j.department, j.location, j.employment_type,
-  j.salary_min, j.salary_max, j.deadline, j.created_at`;
+  j.salary_min, j.salary_max, j.deadline, j.status, j.created_at,
+  c.id AS company_id, c.name AS company`;
 
 // Lowongan yang tampil di halaman publik: published dan belum lewat deadline
 const PUBLIC_CONDITION = `j.status = 'published' AND (j.deadline IS NULL OR j.deadline >= CURDATE())`;
 
-// Daftar lowongan publik (dengan filter, pencarian, dan pagination)
+// Daftar lowongan publik (dengan filter, pencarian, dan pagination).
+// Pengunjung umum melihat semua perusahaan; HR hanya melihat lowongan milik perusahaannya.
 export async function listJobs(req, res) {
   const { q, type, location, department, sort } = req.query;
   const { page, limit, offset } = parsePagination(req.query, 10);
@@ -20,7 +23,7 @@ export async function listJobs(req, res) {
   const conditions = [PUBLIC_CONDITION];
   const params = [];
 
-  if (type && EMPLOYMENT_TYPES.includes(type)) {
+  if (type && ['full_time', 'part_time', 'contract', 'internship'].includes(type)) {
     conditions.push('j.employment_type = ?');
     params.push(type);
   }
@@ -33,7 +36,6 @@ export async function listJobs(req, res) {
     params.push(department);
   }
   if (q) {
-    // Skill dicari lewat kualifikasi dan deskripsi pekerjaan
     conditions.push(
       '(j.title LIKE ? OR j.department LIKE ? OR j.qualifications LIKE ? OR j.description LIKE ?)'
     );
@@ -49,18 +51,21 @@ export async function listJobs(req, res) {
 
   const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM jobs j WHERE ${where}`, params);
   const [jobs] = await pool.query(
-    `SELECT ${LIST_COLUMNS} FROM jobs j WHERE ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
+    `SELECT ${LIST_COLUMNS} FROM jobs j JOIN companies c ON c.id = j.company_id WHERE ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );
 
   success(res, 'Daftar lowongan', {
-    jobs: jobs.map((job) => ({ ...job, company: COMPANY_NAME })),
+    jobs: jobs.map((job) => ({ ...job, company: job.company || COMPANY.name })),
     pagination: buildPagination(total, page, limit),
   });
 }
 
 // Pilihan untuk dropdown filter
 export async function getFilters(req, res) {
+  const [[{ companies }]] = await pool.query(
+    "SELECT JSON_ARRAYAGG(JSON_OBJECT('id', id, 'name', name)) AS companies FROM companies"
+  );
   const [departments] = await pool.query(
     `SELECT DISTINCT j.department FROM jobs j WHERE ${PUBLIC_CONDITION} ORDER BY j.department`
   );
@@ -68,6 +73,7 @@ export async function getFilters(req, res) {
     `SELECT DISTINCT j.location FROM jobs j WHERE ${PUBLIC_CONDITION} ORDER BY j.location`
   );
   success(res, 'Filter lowongan', {
+    companies: companies || [],
     departments: departments.map((row) => row.department),
     locations: locations.map((row) => row.location),
   });
@@ -76,8 +82,7 @@ export async function getFilters(req, res) {
 // Detail lowongan. Pengunjung hanya bisa melihat yang published, admin bisa melihat semua.
 export async function getJob(req, res) {
   const [rows] = await pool.query(
-    `SELECT j.*, (j.deadline IS NOT NULL AND j.deadline < CURDATE()) AS expired
-     FROM jobs j WHERE j.id = ?`,
+    `SELECT j.*, c.name AS company FROM jobs j JOIN companies c ON c.id = j.company_id WHERE j.id = ?`,
     [req.params.id]
   );
   const job = rows[0];
@@ -87,11 +92,6 @@ export async function getJob(req, res) {
     throw new AppError('Lowongan tidak ditemukan', 404);
   }
 
-  job.expired = Boolean(job.expired);
-  job.company = COMPANY_NAME;
-  job.applied_application_id = null;
-
-  // Untuk kandidat: apakah sudah pernah melamar lowongan ini?
   if (req.user?.role === 'candidate') {
     const [applied] = await pool.query(
       'SELECT id FROM applications WHERE user_id = ? AND job_id = ?',
@@ -103,16 +103,12 @@ export async function getJob(req, res) {
   success(res, 'Detail lowongan', { job });
 }
 
-// Daftar semua lowongan untuk HR (termasuk draft dan closed)
+// Daftar semua lowongan untuk HR: hanya lowongan milik perusahaannya.
 export async function listAllJobs(req, res) {
-  const { status, q } = req.query;
-  const conditions = ['1 = 1'];
-  const params = [];
+  const { q } = req.query;
+  const [where, params] = getCompanyWhere(req);
 
-  if (status && JOB_STATUSES.includes(status)) {
-    conditions.push('j.status = ?');
-    params.push(status);
-  }
+  const conditions = [where];
   if (q) {
     conditions.push('(j.title LIKE ? OR j.department LIKE ?)');
     const like = `%${escapeLike(q)}%`;
@@ -122,7 +118,7 @@ export async function listAllJobs(req, res) {
   const [jobs] = await pool.query(
     `SELECT ${LIST_COLUMNS}, j.status,
        (SELECT COUNT(*) FROM applications a WHERE a.job_id = j.id) AS applicant_count
-     FROM jobs j WHERE ${conditions.join(' AND ')}
+     FROM jobs j JOIN companies c ON c.id = j.company_id WHERE ${conditions.join(' AND ')}
      ORDER BY j.created_at DESC, j.id DESC`,
     params
   );
@@ -148,11 +144,14 @@ function pickJobFields(body) {
 }
 
 export async function createJob(req, res) {
+  const companyId = req.user.company_id;
+  if (!companyId) throw new AppError('Hanya HRD dari perusahaan yang bisa membuat lowongan', 403);
+
   const [result] = await pool.query(
     `INSERT INTO jobs (title, department, description, responsibilities, qualifications, benefits,
-       location, employment_type, salary_min, salary_max, deadline, status, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [...pickJobFields(req.body), req.user.id]
+       location, employment_type, salary_min, salary_max, deadline, status, created_by, company_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [...pickJobFields(req.body), req.user.id, companyId]
   );
   success(res, 'Lowongan berhasil dibuat', { id: result.insertId }, 201);
 }

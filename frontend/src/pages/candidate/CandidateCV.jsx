@@ -10,6 +10,8 @@ const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx'];
 
 export default function CandidateCV() {
   const { data, loading, error, reload } = useFetch('/cv');
+  const [extract, setExtract] = useState(null);
+  const [extractLoading, setExtractLoading] = useState(false);
   const [file, setFile] = useState(null);
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
@@ -48,7 +50,6 @@ export default function CandidateCV() {
     setBusy(true);
     setFormError('');
     setMessage('');
-
     const form = new FormData();
     form.append('cv', file);
     try {
@@ -56,10 +57,23 @@ export default function CandidateCV() {
       setMessage(cv ? 'CV berhasil diganti' : 'CV berhasil diunggah');
       resetInput();
       reload();
+      await refreshExtract();
     } catch (err) {
       setFormError(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function refreshExtract() {
+    setExtractLoading(true);
+    try {
+      const res = await api('/cv/extract');
+      setExtract(res.data);
+    } catch (err) {
+      // jika belum ada ekstraksi (belum ada CV), abaikan
+    } finally {
+      setExtractLoading(false);
     }
   }
 
@@ -71,6 +85,7 @@ export default function CandidateCV() {
       await api(`/cv/${cv.id}`, { method: 'DELETE' });
       setMessage('CV berhasil dihapus');
       reload();
+      setExtract(null);
     } catch (err) {
       setFormError(err.message);
     }
@@ -87,13 +102,47 @@ export default function CandidateCV() {
 
   return (
     <>
-      <div className="page-head"><h1>CV Saya</h1></div>
+      <div className="page-head">
+        <h1>CV Saya</h1>
+        <p className="muted small">
+          Unggah CV (PDF/DOC/DOCX) lalu sistem akan membacanya dan mendeteksi skill, ijazah, dan sertifikat Anda.
+        </p>
+      </div>
 
       {loading && !data && <Loading />}
       {error && <ErrorMessage message={error} onRetry={reload} />}
 
       {data && (
         <div className="stack">
+          {/* Data ekstraksi */}
+          {extractLoading && <p className="muted small">Membaca isi CV...</p>}
+          {extract && (
+            <section className="panel">
+              <h2>Dari CV yang diunggah</h2>
+              {extract.skills && extract.skills.length > 0 && (
+                <div className="tag-group">
+                  {extract.skills.map((s) => <span key={s} className="tag">{s}</span>)}
+                </div>
+              )}
+              {extract.ijazah && extract.ijazah.length > 0 && (
+                <p className="muted small">Ijazah: {extract.ijazah.join(', ')}</p>
+              )}
+              {extract.sertifikat && extract.sertifikat.length > 0 && (
+                <p className="muted small">Sertifikat: {extract.sertifikat.join(', ')}</p>
+              )}
+              {(!extract.skills || extract.skills.length === 0) && !extract.ijazah && !extract.sertifikat && (
+                <p className="muted small">Belum ada data yang dapat diekstrak. Silakan unggah CV PDF.</p>
+              )}
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={refreshExtract}
+                disabled={extractLoading}
+              >
+                {extractLoading ? 'Membaca...' : 'Ulangi pembacaan'}
+              </button>
+            </section>
+          )}
+
           <section className="panel">
             <h2>CV saat ini</h2>
             {cv ? (

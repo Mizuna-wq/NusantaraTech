@@ -1,11 +1,11 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { pool, withTransaction } from '../config/db.js';
+import { pool } from '../config/db.js';
 import { AppError } from '../utils/AppError.js';
 import { success } from '../utils/response.js';
 
 function signToken(user) {
-  return jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, {
+  return jwt.sign({ id: user.id, role: user.role, company_id: user.company_id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 }
@@ -18,28 +18,37 @@ function publicUser(user) {
     email: user.email,
     phone: user.phone,
     role: user.role,
+    company_id: user.company_id,
   };
 }
 
 export async function register(req, res) {
-  const { full_name, email, phone, password } = req.body;
+  const { full_name, email, phone, password, role, company_id } = req.body;
 
-  const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
+  // Role harus valid
+  if (!['candidate', 'hr', 'admin'].includes(role)) {
+    throw new AppError('Role tidak valid', 400);
+  }
+
+  if (role === 'hr') {
+    // HR harus memilih perusahaan yang mereka kelola
+    const [companies] = await pool.query('SELECT id FROM companies WHERE id = ?', [Number(company_id)]);
+    if (companies.length === 0) throw new AppError('Perusahaan tidak valid', 400);
+  }
+
+  const existing = await pool.query('SELECT id FROM users WHERE email = ?', [email]);
   if (existing.length > 0) throw new AppError('Email sudah terdaftar', 409);
 
   const passwordHash = await bcrypt.hash(password, 10);
 
   // User dan profilnya dibuat bersamaan
-  const userId = await withTransaction(async (conn) => {
-    const [result] = await conn.query(
-      'INSERT INTO users (full_name, email, phone, password_hash, role) VALUES (?, ?, ?, ?, ?)',
-      [full_name, email, phone, passwordHash, 'candidate']
-    );
-    await conn.query('INSERT INTO candidate_profiles (user_id) VALUES (?)', [result.insertId]);
-    return result.insertId;
-  });
+  const userId = await pool.query(
+    `INSERT INTO users (full_name, email, phone, password_hash, role, company_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [full_name, email, phone, passwordHash, role, role === 'hr' ? Number(company_id) : null]
+  );
 
-  const user = { id: userId, full_name, email, phone, role: 'candidate' };
+  const user = { id: userId.insertId, full_name, email, phone, role, company_id: role === 'hr' ? Number(company_id) : null };
   success(res, 'Registrasi berhasil', { token: signToken(user), user }, 201);
 }
 

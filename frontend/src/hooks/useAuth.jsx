@@ -29,7 +29,9 @@ export function AuthProvider({ children }) {
     return res.data.user;
   }
 
-  const login = (email, password) => authenticate('/auth/login', { email, password });
+  const login = (email, password, role = 'candidate', companyId = '') =>
+    authenticate('/auth/login', { email, password, role, company_id: companyId });
+
   const register = (fields) => authenticate('/auth/register', fields);
 
   function logout() {
